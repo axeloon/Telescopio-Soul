@@ -6,7 +6,6 @@
 #include <omp.h>
 #define STB_IMAGE_WRITE_IMPLEMENTATION // Define esta macro antes de incluir stb_image_write.h
 #include "stb_image_write.h"
-// #include <opencv2/opencv.hpp>
 
 using namespace std;
 
@@ -62,24 +61,6 @@ vector<vector<int>> leerArchivo(const string &nombreArchivo)
     return matriz;
 }
 
-// Función para contar los valores faltantes en una matriz
-int contarValoresFaltantes(const vector<vector<int>> &matriz)
-{
-    int faltantes = 0;
-    for (const auto &fila : matriz)
-    {
-        for (int valor : fila)
-        {
-            if (valor == -1)
-            {
-                faltantes++;
-            }
-        }
-    }
-    return faltantes;
-}
-
-// Depurar este bloque de código, ya que aqui está el calculo de todo
 // Función para calcular valores faltantes en el canal rojo
 vector<vector<int>> calcularValoresFaltantesRojo(vector<vector<int>> &rojo, const vector<vector<int>> &promedio, const vector<vector<int>> &verde, const vector<vector<int>> &azul)
 {
@@ -90,9 +71,13 @@ vector<vector<int>> calcularValoresFaltantesRojo(vector<vector<int>> &rojo, cons
         {
             if (rojo[i][j] == -1)
             {
-                float resultado = (promedio[i][j] - 0.59 * verde[i][j] - 0.11 * azul[i][j]) / 0.3;
-                resultado = max(0.0f, min(resultado, 255.0f)); // Ajustar los valores fuera de rango
-                rojo[i][j] = static_cast<int>(resultado);
+                int promedio_ij = promedio[i][j];
+                int verde_ij = verde[i][j];
+                int azul_ij = azul[i][j];
+
+                int resultado = (promedio_ij - 59 * verde_ij - 11 * azul_ij) / 3;
+                resultado = max(0, min(resultado, 255)); // Ajustar los valores fuera de rango
+                rojo[i][j] = resultado;
             }
         }
     }
@@ -109,9 +94,13 @@ vector<vector<int>> calcularValoresFaltantesVerde(vector<vector<int>> &verde, co
         {
             if (verde[i][j] == -1)
             {
-                float resultado = (promedio[i][j] - 0.3 * rojo[i][j] - 0.11 * azul[i][j]) / 0.59;
-                resultado = max(0.0f, min(resultado, 255.0f)); // Ajustar los valores fuera de rango
-                verde[i][j] = static_cast<int>(resultado);
+                int promedio_ij = promedio[i][j];
+                int rojo_ij = rojo[i][j];
+                int azul_ij = azul[i][j];
+
+                int resultado = (promedio_ij - 30 * rojo_ij - 11 * azul_ij) / 59;
+                resultado = max(0, min(resultado, 255)); // Ajustar los valores fuera de rango
+                verde[i][j] = resultado;
             }
         }
     }
@@ -128,16 +117,20 @@ vector<vector<int>> calcularValoresFaltantesAzul(vector<vector<int>> &azul, cons
         {
             if (azul[i][j] == -1)
             {
-                float resultado = (promedio[i][j] - 0.3 * rojo[i][j] - 0.59 * verde[i][j]) / 0.11;
-                resultado = max(0.0f, min(resultado, 255.0f)); // Ajustar los valores fuera de rango
-                azul[i][j] = static_cast<int>(resultado);
+                int promedio_ij = promedio[i][j];
+                int rojo_ij = rojo[i][j];
+                int verde_ij = verde[i][j];
+
+                int resultado = (promedio_ij - 30 * rojo_ij - 59 * verde_ij) / 11;
+                resultado = max(0, min(resultado, 255)); // Ajustar los valores fuera de rango
+                azul[i][j] = resultado;
             }
         }
     }
     return azul;
 }
 
-// Función para guardar la imagen en formato JPEG
+/* // Función para guardar la imagen en formato JPEG
 void guardarImagen(const vector<vector<int>> &rojo, const vector<vector<int>> &verde, const vector<vector<int>> &azul, const vector<vector<int>> &alfa, const string &nombreArchivo)
 {
     int ancho = rojo[0].size(); // Ancho de la imagen
@@ -161,10 +154,53 @@ void guardarImagen(const vector<vector<int>> &rojo, const vector<vector<int>> &v
 
     // Escribir la imagen en formato JPEG
     stbi_write_jpg(nombreArchivo.c_str(), ancho, alto, 4, data.data(), 100); // Calidad: 100
+} */
+
+void guardarSeccionImagen(const vector<vector<int>> &rojo, const vector<vector<int>> &verde, const vector<vector<int>> &azul, const vector<vector<int>> &alfa, vector<unsigned char> &data, int inicio, int fin)
+{
+    int index = inicio * rojo[0].size() * 4;
+
+    for (int i = inicio; i < fin; ++i)
+    {
+        for (size_t j = 0; j < rojo[i].size(); ++j)
+        {
+            data[index++] = static_cast<unsigned char>(rojo[i][j]);  // Canal Rojo
+            data[index++] = static_cast<unsigned char>(verde[i][j]); // Canal Verde
+            data[index++] = static_cast<unsigned char>(azul[i][j]);  // Canal Azul
+            data[index++] = static_cast<unsigned char>(alfa[i][j]);  // Canal Alfa
+        }
+    }
+}
+
+// Función para guardar la imagen en formato JPEG
+void guardarImagen(const vector<vector<int>> &rojo, const vector<vector<int>> &verde, const vector<vector<int>> &azul, const vector<vector<int>> &alfa, const string &nombreArchivo)
+{
+    int ancho = rojo[0].size(); // Ancho de la imagen
+    int alto = rojo.size();     // Alto de la imagen
+
+    // Crear un vector para almacenar los datos de la imagen
+    vector<unsigned char> data(ancho * alto * 4); // 4 canales: rojo, verde, azul, alfa
+
+    const int numThreads = omp_get_max_threads(); // Obtener el número máximo de hilos
+
+#pragma omp parallel num_threads(numThreads)
+    {
+        int threadID = omp_get_thread_num();
+        int sectionSize = alto / numThreads;
+        int inicio = threadID * sectionSize;
+        int fin = (threadID == numThreads - 1) ? alto : (inicio + sectionSize);
+
+        guardarSeccionImagen(rojo, verde, azul, alfa, data, inicio, fin);
+    }
+
+    // Escribir la imagen en formato JPEG
+    stbi_write_jpg(nombreArchivo.c_str(), ancho, alto, 4, data.data(), 100); // Calidad: 100
 }
 
 int main(int argc, char *argv[])
 {
+    vector<vector<int>> alfa, rojo, verde, azul, promedio;
+
     // Verificación de argumentos de línea de comandos
     if (argc != 6)
     {
@@ -172,89 +208,55 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    vector<vector<int>> alfa, rojo, verde, azul, promedio;
-
 // Paralelizar la lectura de archivos utilizando OpenMP
 #pragma omp parallel sections
     {
 #pragma omp section
-        {
-            alfa = leerArchivo(argv[1]);
-        }
+        {alfa = leerArchivo(argv[1]);
+}
 
 #pragma omp section
-        {
-            rojo = leerArchivo(argv[2]);
-        }
+{
+    rojo = leerArchivo(argv[2]);
+}
 
 #pragma omp section
-        {
-            verde = leerArchivo(argv[3]);
-        }
+{
+    verde = leerArchivo(argv[3]);
+}
 
 #pragma omp section
-        {
-            azul = leerArchivo(argv[4]);
-        }
+{
+    azul = leerArchivo(argv[4]);
+}
 
 #pragma omp section
-        {
-            promedio = leerArchivo(argv[5]);
-        }
-    }
+{
+    promedio = leerArchivo(argv[5]);
+}
+}
 
-    // Contar los valores faltantes en cada archivo
-    int faltantesAlfa = contarValoresFaltantes(alfa);
-    int faltantesRojo = contarValoresFaltantes(rojo);
-    int faltantesVerde = contarValoresFaltantes(verde);
-    int faltantesAzul = contarValoresFaltantes(azul);
-
-    // Mostrar la cantidad de valores faltantes en cada archivo
-    cout << "Valores faltantes en alfa.txt: " << faltantesAlfa << endl;
-    cout << "Valores faltantes en rojo.txt: " << faltantesRojo << endl;
-    cout << "Valores faltantes en verde.txt: " << faltantesVerde << endl;
-    cout << "Valores faltantes en azul.txt: " << faltantesAzul << endl;
-
-    vector<vector<int>> rojoOtrosCanales(rojo.size(), vector<int>(rojo[0].size(), 0));
-    vector<vector<int>> verdeOtrosCanales(verde.size(), vector<int>(verde[0].size(), 0));
-    vector<vector<int>> azulOtrosCanales(azul.size(), vector<int>(azul[0].size(), 0));
-
-    // Inicializar las matrices verdeOtrosCanales y azulOtrosCanales con el tamaño correcto
-    verdeOtrosCanales.resize(verde.size(), vector<int>(verde[0].size(), 0));
-    azulOtrosCanales.resize(azul.size(), vector<int>(azul[0].size(), 0));
-
-    // Asignar valores correspondientes de los otros canales a los vectores de otros canales
-    for (size_t i = 0; i < rojo.size(); ++i)
+// Cálculo de los valores faltantes en los canales rojo, verde y azul
+#pragma omp parallel sections
+{
+#pragma omp section
     {
-        for (size_t j = 0; j < rojo[i].size(); ++j)
-        {
-            rojoOtrosCanales[i][j] = verde[i][j] + azul[i][j];
-            verdeOtrosCanales[i][j] = rojo[i][j] + azul[i][j];
-            azulOtrosCanales[i][j] = rojo[i][j] + verde[i][j];
-        }
+        rojo = calcularValoresFaltantesRojo(rojo, promedio, verde, azul);
     }
 
-    rojo = calcularValoresFaltantesRojo(rojo, promedio, verde, azul);
-    verde = calcularValoresFaltantesVerde(verde, promedio, rojo, azul);
-    azul = calcularValoresFaltantesAzul(azul, promedio, rojo, verde);
+#pragma omp section
+    {
+        verde = calcularValoresFaltantesVerde(verde, promedio, rojo, azul);
+    }
 
-    // Contar los valores faltantes en cada archivo nuevamente
-    faltantesAlfa = contarValoresFaltantes(alfa);
-    faltantesRojo = contarValoresFaltantes(rojo);
-    faltantesVerde = contarValoresFaltantes(verde);
-    faltantesAzul = contarValoresFaltantes(azul);
+#pragma omp section
+    {
+        azul = calcularValoresFaltantesAzul(azul, promedio, rojo, verde);
+    }
+}
 
-    // Mostrar la cantidad de valores faltantes en cada archivo nuevamente
-    cout << "Valores faltantes en alfa.txt: " << faltantesAlfa << endl;
-    cout << "Valores faltantes en rojo.txt: " << faltantesRojo << endl;
-    cout << "Valores faltantes en verde.txt: " << faltantesVerde << endl;
-    cout << "Valores faltantes en azul.txt: " << faltantesAzul << endl;
+// Guardar la imagen resultante
+guardarImagen(rojo, verde, azul, alfa, "galaxia_lejana.jpg");
 
-    // Procesar y encontrar valores faltantes en la imagen final
-    // encontrarValoresFaltantes(promedio);
-
-    // Guardar la imagen resultante
-    guardarImagen(rojo, verde, azul, alfa, "imagen_resultante.jpg");
-
-    return 0;
+return 0;
 }
